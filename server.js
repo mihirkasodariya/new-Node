@@ -88,63 +88,65 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const cors = require("cors");
 
 const app = express();
-const server = http.createServer(app);
+app.use(cors());
 
+const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
 });
 
-let waitingUser = null;
+let waitingUser = null; 
 
 io.on("connection", (socket) => {
-  console.log("🟢 User connected:", socket.id);
+  console.log("🟢 User Connected:", socket.id);
 
   socket.on("join-room", () => {
-    console.log("➡️ join-room:", socket.id);
+    // 🛑 FIX 1: Agar user pehle se wait kar raha hai aur dobara join-room bheje
+    if (waitingUser && waitingUser.id === socket.id) {
+        console.log("⚠️ User is already waiting:", socket.id);
+        return;
+    }
 
     if (waitingUser) {
-      console.log("🔗 Matching:", waitingUser.id, socket.id);
-
+      // ✅ Match Found
       const roomID = `${waitingUser.id}-${socket.id}`;
+      console.log(`🚀 Match Found: ${waitingUser.id} <--> ${socket.id}`);
 
+      // Dono ko room me daalo
       socket.join(roomID);
       waitingUser.join(roomID);
 
-      waitingUser.emit("match-found", {
-        roomID,
-        initiator: true,
-      });
+      // Offer/Answer Initiate karo
+      io.to(waitingUser.id).emit("match-found", { roomID, initiator: true });
+      io.to(socket.id).emit("match-found", { roomID, initiator: false });
 
-      socket.emit("match-found", {
-        roomID,
-        initiator: false,
-      });
-
-      console.log("✅ Match emitted, room:", roomID);
-
-      waitingUser = null;
+      waitingUser = null; // Queue clear karo
     } else {
-      console.log("⏳ Waiting user set:", socket.id);
+      // ⏳ Koi nahi hai, waiting list me daalo
       waitingUser = socket;
+      console.log("⏳ User waiting for match:", socket.id);
     }
   });
 
-  socket.on("signal", ({ roomID, signal }) => {
-    console.log("📡 Signal from", socket.id, "to room", roomID);
-    socket.to(roomID).emit("signal", signal);
+  socket.on("signal", (data) => {
+    // Signal forward karo
+    socket.to(data.roomID).emit("signal", data.signal);
   });
 
   socket.on("disconnect", () => {
-    console.log("🔴 User disconnected:", socket.id);
-    if (waitingUser?.id === socket.id) {
+    console.log("🔴 User Disconnected:", socket.id);
+    if (waitingUser === socket) {
       waitingUser = null;
     }
   });
 });
 
-
-server.listen(5000, () => {
-  console.log("Socket server running on 5000");
+server.listen(5000, "0.0.0.0", () => {
+  console.log("Server running on port 5000");
 });
