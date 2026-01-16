@@ -7,8 +7,10 @@ const app = express();
 app.use(cors());
 
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: { origin: "*" },
+  transports: ["websocket"],
 });
 
 let waitingUser = null;
@@ -25,8 +27,15 @@ io.on("connection", (socket) => {
       socket.join(roomID);
       waitingUser.join(roomID);
 
-      waitingUser.emit("match-found", { roomID, initiator: true });
-      socket.emit("match-found", { roomID, initiator: false });
+      waitingUser.emit("match-found", {
+        roomID,
+        initiator: true,
+      });
+
+      socket.emit("match-found", {
+        roomID,
+        initiator: false,
+      });
 
       waitingUser = null;
     } else {
@@ -35,14 +44,17 @@ io.on("connection", (socket) => {
   });
 
   socket.on("signal", ({ roomID, signal }) => {
+    if (!signal) return;
     socket.to(roomID).emit("signal", signal);
   });
 
   socket.on("disconnect", () => {
-    if (waitingUser?.id === socket.id) waitingUser = null;
+    if (waitingUser?.id === socket.id) {
+      waitingUser = null;
+    }
   });
 });
 
 server.listen(5000, () => {
-  console.log("✅ Socket server running on 5000");
+  console.log("✅ Socket server running on port 5000");
 });
